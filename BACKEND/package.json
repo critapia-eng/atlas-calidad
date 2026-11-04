@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "API Atlas - Express + PostgreSQL (intencionalmente vulnerable)",
   "main": "src/app.js",
-  "scripts": {
+"scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon"
+    "dev": "nodemon",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "cors": "^2.8.5",
