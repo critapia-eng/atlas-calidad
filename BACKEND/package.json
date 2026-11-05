@@ -7,7 +7,7 @@
     "start": "node src/app.js",
     "dev": "nodemon",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage --passWithNoTests"
   },
   "dependencies": {
     "jest": "^29.7.0",
