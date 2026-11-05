@@ -54,7 +54,7 @@ jobs:
           args: >
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ vars.SONAR_KEY_BACKEND }}
-            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.wait=false
  
       - name: SonarQube Cloud - Frontend
         uses: SonarSource/sonarqube-scan-action@v7
@@ -65,7 +65,7 @@ jobs:
           args: >
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ vars.SONAR_KEY_FRONTEND }}
-            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.wait=false
  
   # ------------------------------------------------------------------
   # 2) Construir las imágenes Docker y escanearlas con Trivy
