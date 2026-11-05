@@ -40,7 +40,7 @@ jobs:
  
       - name: Guardar reporte de cobertura
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cobertura-backend
           path: BACKEND/coverage
@@ -156,7 +156,7 @@ jobs:
  
       - name: Guardar reporte de Playwright
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reporte-playwright
           path: e2e/playwright-report
