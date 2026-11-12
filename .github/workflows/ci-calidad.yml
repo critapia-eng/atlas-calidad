@@ -46,7 +46,7 @@ jobs:
           path: BACKEND/coverage
  
       - name: SonarQube Cloud - Backend
-        uses: SonarSource/sonarqube-scan-action@v7
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -57,7 +57,7 @@ jobs:
             -Dsonar.qualitygate.wait=false
  
       - name: SonarQube Cloud - Frontend
-        uses: SonarSource/sonarqube-scan-action@v7
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
