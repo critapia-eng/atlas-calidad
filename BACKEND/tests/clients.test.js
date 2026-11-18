@@ -22,4 +22,17 @@ describe("Pruebas de seguridad y control de acceso - Clientes (DEF-01)", () => {
 
     expect(res.statusCode).toBe(403);
   });
+
+  test("Un token sin empresaId no puede eliminar clientes -> 401", async () => {
+    const tokenSinEmpresa = jwt.sign(
+      { id: 2, nombreUsuario: "editor", rol: "editor" },
+      JWT_SECRET
+    );
+
+    const res = await request(app)
+      .delete("/clientes/999")
+      .set("Authorization", `Bearer ${tokenSinEmpresa}`);
+
+    expect(res.statusCode).toBe(401);
+  });
 });

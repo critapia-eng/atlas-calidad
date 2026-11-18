@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  security-events: write
 
 jobs:
   # ==================================================================
@@ -57,6 +55,9 @@ jobs:
         with:
           name: cobertura-backend
           path: BACKEND/coverage
+
+      - name: Ajustar rutas de cobertura para SonarQube
+        run: sed -i 's#^SF:#SF:BACKEND/#' BACKEND/coverage/lcov.info
 
       - name: Análisis estático y Quality Gate en SonarQube Cloud
         uses: SonarSource/sonarqube-scan-action@v5
@@ -202,6 +203,9 @@ jobs:
     needs: pruebas-sistema
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4

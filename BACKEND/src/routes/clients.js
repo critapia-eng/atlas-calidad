@@ -308,13 +308,6 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    if (!authUser || !authUser.empresaId) {
-      return res.status(401).json({
-        error: "No autorizado",
-        glosa: "Token inválido o sin empresa asociada",
-      });
-    }
-
     // Control de rol administrador (DEF-01)
     if (authUser.rol !== "admin" && authUser.rol !== "administrador") {
       return res.status(403).json({
