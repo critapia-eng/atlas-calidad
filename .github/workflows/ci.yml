@@ -1,0 +1,236 @@
+name: CI/CD Atlas - Calidad, Seguridad y Despliegue
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ==================================================================
+  # ETAPA 1: Secretos (Gitleaks), Linting Docker (Hadolint), Pruebas y SonarCloud
+  # ==================================================================
+  calidad-y-estatico:
+    name: 1. Secretos, Pruebas y SonarQube Cloud
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detección de secretos con Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validar Dockerfiles con Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: BACKEND/Dockerfile
+          failure-threshold: error
+
+      - name: Configurar Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: BACKEND/package-lock.json
+
+      - name: Instalar dependencias del backend
+        working-directory: BACKEND
+        run: npm ci
+
+      - name: Ejecutar pruebas unitarias y de integración con cobertura
+        working-directory: BACKEND
+        run: npm test -- --coverage --runInBand
+
+      - name: Guardar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-backend
+          path: BACKEND/coverage
+
+      - name: Ajustar rutas de cobertura para SonarQube
+        run: sed -i 's#^SF:#SF:BACKEND/#' BACKEND/coverage/lcov.info
+
+      - name: Análisis estático y Quality Gate en SonarQube Cloud
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+
+  # ==================================================================
+  # ETAPA 2: Construcción de imágenes Docker y escaneo con Trivy
+  # ==================================================================
+  construccion-y-trivy:
+    name: 2. Docker Build + Trivy (${{ matrix.nombre }})
+    needs: calidad-y-estatico
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: backend
+            carpeta: BACKEND
+          - nombre: frontend
+            carpeta: FRONTEND
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Construir imagen Docker
+        run: >
+          docker build -t atlas-${{ matrix.nombre }}:${{ github.sha }}
+          ./${{ matrix.carpeta }}
+
+      - name: Escanear vulnerabilidades con Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: atlas-${{ matrix.nombre }}:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: '0'
+
+  # ==================================================================
+  # ETAPA 3: Pruebas de sistema (E2E Playwright, OWASP ZAP y k6)
+  # ==================================================================
+  pruebas-sistema:
+    name: 3. E2E, Seguridad Dinámica (ZAP) y Carga (k6)
+    needs: construccion-y-trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar variables de entorno
+        run: |
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" > .env
+          echo "PORT_POSTGRES=15433" >> .env
+          echo "PORT_BACKEND=4451" >> .env
+          echo "PORT_FRONTEND=3351" >> .env
+
+      - name: Preparar directorio de uploads
+        run: mkdir -p BACKEND/uploads/contracts && chmod -R 777 BACKEND/uploads
+
+      - name: Levantar servicios con Docker Compose
+        run: docker compose up -d --build
+
+      - name: Esperar disponibilidad de Backend y Frontend
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:4451/ > /dev/null \
+               && curl -sf http://localhost:3351/ > /dev/null; then
+              echo "Servicios listos"; exit 0
+            fi
+            sleep 5
+          done
+          docker compose logs
+          exit 1
+
+      - name: Configurar Node.js 24 para E2E
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Instalar Playwright y navegadores
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Ejecutar pruebas E2E y accesibilidad
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Subir reporte de Playwright
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-playwright
+          path: e2e/playwright-report/
+
+      - name: Escaneo dinámico pasivo Frontend (OWASP ZAP)
+        if: always()
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:3351
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap-frontend
+
+      - name: Escaneo dinámico API OpenAPI (OWASP ZAP)
+        if: always()
+        uses: zaproxy/action-api-scan@v0.9.0
+        with:
+          target: http://localhost:4451/openapi.json
+          format: openapi
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap-api
+
+      - name: Prueba de rendimiento perfil humo (k6)
+        if: always()
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/rendimiento:/scripts" \
+            grafana/k6:1.3.0 run -e API_URL=http://localhost:4451 -e PERFIL=humo /scripts/carga-clientes.js
+
+      - name: Mostrar logs en caso de fallo
+        if: failure()
+        run: docker compose logs
+
+      - name: Detener y limpiar contenedores
+        if: always()
+        run: docker compose down -v
+
+  # ==================================================================
+  # ETAPA 4: Publicación de imágenes en GitHub Container Registry (GHCR)
+  # ==================================================================
+  publicar-ghcr:
+    name: 4. Publicar imágenes en GHCR
+    needs: pruebas-sistema
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Iniciar sesión en GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y subir imagen Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./BACKEND
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/atlas-backend:latest
+            ghcr.io/${{ github.repository_owner }}/atlas-backend:${{ github.sha }}
+
+      - name: Construir y subir imagen Frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./FRONTEND
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/atlas-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/atlas-frontend:${{ github.sha }}s

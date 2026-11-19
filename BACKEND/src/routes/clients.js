@@ -308,6 +308,14 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
+    // Control de rol administrador (DEF-01)
+    if (authUser.rol !== "admin" && authUser.rol !== "administrador") {
+      return res.status(403).json({
+        error: "Prohibido",
+        glosa: "Solo un administrador puede eliminar clientes",
+      });
+    }
+
     const result = await pool.query(
       "DELETE FROM clientes WHERE id=$1 AND empresa_id = $2 RETURNING *",
       [req.params.id, authUser.empresaId]
