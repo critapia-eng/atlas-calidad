@@ -218,7 +218,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Construir y subir imagen Backend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./BACKEND
           push: true
@@ -227,7 +227,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/atlas-backend:${{ github.sha }}
 
       - name: Construir y subir imagen Frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./FRONTEND
           push: true
